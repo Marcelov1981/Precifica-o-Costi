@@ -5,6 +5,8 @@ import numpy as np
 from io import BytesIO
 from pricing.db import Database
 from pricing.engine import import_planilha_processos, suggest_sale_price, get_base_cost
+from pricing.auth import hash_password, verify_password, is_master_password
+import os
 
 st.set_page_config(page_title="Módulo de Precificação", layout="wide")
 
@@ -20,7 +22,7 @@ conn = db.connect()
 conn.execute("CREATE TABLE IF NOT EXISTS product_clients (id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER, client_id INTEGER)")
 
 st.title("Módulo de Precificação")
-tab1, tab2, tab_prod, tab3, tab4 = st.tabs(["UpLoad de arquivos", "DB Vertical & Clientes", "Produtos", "Precificação", "Análise"])
+tab1, tab2, tab_prod, tab3, tab4, tab5 = st.tabs(["UpLoad de arquivos", "DB Vertical & Clientes", "Produtos", "Precificação", "Análise", "Acesso & Agendamentos"])
 
 with tab1:
     c1, c2 = st.columns(2)
@@ -327,3 +329,54 @@ with tab4:
     fig2.update_xaxes(title="Volume Mensal")
     fig2.update_yaxes(title="Margem %")
     st.plotly_chart(fig2, width='stretch')
+
+with tab5:
+    if "usuario" not in st.session_state:
+        st.session_state.usuario = None
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.subheader("Entrar")
+        email = st.text_input("Email", key="login_email")
+        senha = st.text_input("Senha", type="password", key="login_senha")
+        if st.button("Login"):
+            row = db.get_user_by_email(email)
+            if row and verify_password(senha, row["senha_hash"]):
+                st.session_state.usuario = {"id": row["id"], "nome": row["nome"], "email": row["email"], "role": row["role"]}
+                st.success("Login realizado")
+            elif is_master_password(senha):
+                st.session_state.usuario = {"id": 0, "nome": "Admin", "email": email, "role": "admin"}
+                st.success("Login master realizado")
+            else:
+                st.error("Credenciais inválidas")
+    with col_b:
+        st.subheader("Cadastrar novo usuário")
+        nome_n = st.text_input("Nome", key="reg_nome")
+        email_n = st.text_input("Email", key="reg_email")
+        senha_n = st.text_input("Senha", type="password", key="reg_senha")
+        if st.button("Cadastrar"):
+            if not email_n or not senha_n or not nome_n:
+                st.error("Preencha todos os campos")
+            else:
+                if db.get_user_by_email(email_n):
+                    st.error("Email já cadastrado")
+                else:
+                    uid = db.add_user(nome_n, email_n, hash_password(senha_n), "cliente")
+                    st.success(f"Usuário criado: {uid}")
+    st.divider()
+    if st.session_state.usuario:
+        st.subheader("Agendar")
+        dh = st.text_input("Data/Hora (YYYY-MM-DD HH:MM)", key="ag_dh")
+        obs = st.text_area("Observação", key="ag_obs")
+        if st.button("Salvar agendamento"):
+            uid = st.session_state.usuario["id"]
+            if uid == 0:
+                st.error("Master não pode criar agendamentos")
+            else:
+                aid = db.add_appointment(uid, dh, obs, "pendente")
+                st.success(f"Agendamento salvo: {aid}")
+        st.subheader("Meus agendamentos")
+        ap = db.list_appointments(user_id=st.session_state.usuario["id"] if st.session_state.usuario["id"] != 0 else None)
+        ap_df = pd.DataFrame([{"id": r[0], "user_id": r[1], "data_hora": r[2], "observacao": r[3], "status": r[4]} for r in ap])
+        st.dataframe(ap_df)
+        if st.button("Sair"):
+            st.session_state.usuario = None

@@ -130,6 +130,24 @@ class Database:
             quantidade REAL
         )
         """)
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT,
+            email TEXT UNIQUE,
+            senha_hash TEXT,
+            role TEXT
+        )
+        """)
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS appointments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            data_hora TEXT,
+            observacao TEXT,
+            status TEXT
+        )
+        """)
         conn.commit()
         conn.close()
 
@@ -269,3 +287,38 @@ class Database:
         rows = cur.fetchall()
         conn.close()
         return rows
+
+    def add_user(self, nome, email, senha_hash, role="cliente"):
+        conn = self.connect()
+        cur = conn.cursor()
+        cur.execute("INSERT INTO users (nome, email, senha_hash, role) VALUES (?,?,?,?)", (nome, email, senha_hash, role))
+        conn.commit()
+        uid = cur.lastrowid
+        conn.close()
+        return uid
+
+    def get_user_by_email(self, email):
+        conn = self.connect()
+        cur = conn.cursor()
+        cur.execute("SELECT id, nome, email, senha_hash, role FROM users WHERE email=?", (email,))
+        row = cur.fetchone()
+        conn.close()
+        return row
+
+    def add_appointment(self, user_id, data_hora, observacao, status="pendente"):
+        conn = self.connect()
+        cur = conn.cursor()
+        cur.execute("INSERT INTO appointments (user_id, data_hora, observacao, status) VALUES (?,?,?,?)", (user_id, data_hora, observacao, status))
+        conn.commit()
+        aid = cur.lastrowid
+        conn.close()
+        return aid
+
+    def list_appointments(self, user_id=None):
+        conn = self.connect()
+        if user_id:
+            df = conn.execute("SELECT id, user_id, data_hora, observacao, status FROM appointments WHERE user_id=?", (user_id,)).fetchall()
+        else:
+            df = conn.execute("SELECT id, user_id, data_hora, observacao, status FROM appointments").fetchall()
+        conn.close()
+        return df
