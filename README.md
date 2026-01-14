@@ -25,3 +25,10 @@ Aplicativo Streamlit para precificação fabril focado em matéria-prima, proces
 2. git remote add origin https://github.com/SEU_USUARIO/modulo-precificacao.git
 3. git push -u origin main
 4. Adicione o colaborador cesarscheck nas configurações do repositório (Settings → Collaborators)
+
+## Administradores e colaboradores
+- Para adicionar CESARSCHECK como admin pela UI:
+  - Acesse Settings → Collaborators → Add people → informe CESARSCHECK → permissão Admin
+- Via GitHub CLI (requer gh instalado e login):
+  - REPO="Marcelov1981/Modulo-Precificacao" USER="CESARSCHECK" bash scripts/add_collaborator.sh
+  - ou: gh api -X PUT "repos/Marcelov1981/Modulo-Precificacao/collaborators/CESARSCHECK" -f permission=admin
