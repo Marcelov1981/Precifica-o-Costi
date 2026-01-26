@@ -51,9 +51,15 @@ class Database:
             nome TEXT,
             preco_unitario REAL,
             quantidade_padrao REAL,
-            fornecedor TEXT
+            fornecedor TEXT,
+            unidade TEXT
         )
         """)
+        # Ensure unidade column exists for third_party_items
+        cur.execute("PRAGMA table_info(third_party_items)")
+        tp_cols = [r[1] for r in cur.fetchall()]
+        if "unidade" not in tp_cols:
+            cur.execute("ALTER TABLE third_party_items ADD COLUMN unidade TEXT")
         cur.execute("""
         CREATE TABLE IF NOT EXISTS admin_costs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -169,8 +175,8 @@ class Database:
         cur.execute("SELECT COUNT(*) FROM third_party_items")
         if cur.fetchone()[0] == 0:
             cur.execute(
-                "INSERT INTO third_party_items (nome, preco_unitario, quantidade_padrao, fornecedor) VALUES (?,?,?,?)",
-                ("Tratamento térmico", 300.0, 1, "Terceiro Y")
+                "INSERT INTO third_party_items (nome, preco_unitario, quantidade_padrao, fornecedor, unidade) VALUES (?,?,?,?,?)",
+                ("Tratamento térmico", 300.0, 1, "Terceiro Y", "serviço")
             )
         cur.execute("SELECT COUNT(*) FROM admin_costs")
         if cur.fetchone()[0] == 0:

@@ -48,8 +48,19 @@ def _tax_rate_for_product(conn, product_id, client_id):
     total = pis + cofins + icms
     return {"pis": pis, "cofins": cofins, "icms": icms, "total": total, "regime": regime}
 
-def suggest_sale_price(conn, product_id, client_id, margem_percentual):
-    base = get_base_cost(conn, product_id)
+def suggest_sale_price(conn, product_id, client_id, margem_percentual, admin_pct=0.0, frete_pct=0.0, outros_pct=0.0):
+    base_bruto = get_base_cost(conn, product_id)
+    base_core = base_bruto["materiais"] + base_bruto["processos"] + base_bruto["terceiros"]
+    perc_total = _d(admin_pct) + _d(frete_pct) + _d(outros_pct)
+    custo_admin_calc = (base_core * (perc_total / _d(100))) if perc_total > _d(0) else base_bruto["administrativos"]
+    custo_sem_impostos = base_core + custo_admin_calc
+    base = {
+        "materiais": base_bruto["materiais"],
+        "processos": base_bruto["processos"],
+        "terceiros": base_bruto["terceiros"],
+        "administrativos": custo_admin_calc,
+        "sem_impostos": custo_sem_impostos,
+    }
     taxa = _tax_rate_for_product(conn, product_id, client_id)
     margem = _d(margem_percentual) / _d(100)
     preco = base["sem_impostos"] / (_d(1) - margem - taxa["total"])
