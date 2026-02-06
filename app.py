@@ -22,7 +22,7 @@ conn = db.connect()
 conn.execute("CREATE TABLE IF NOT EXISTS product_clients (id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER, client_id INTEGER)")
 
 st.title("Módulo de Precificação")
-tab_access, tab2, tab_prod, tab3, tab_upload = st.tabs(["Acesso & Agendamentos", "Cadastros", "Produtos", "Precificação", "UpLoad de arquivos"])
+tab_access, tab_cli, tab2, tab_prod, tab3, tab_upload = st.tabs(["Acesso & Agendamentos", "Gestão de Clientes", "Cadastros Gerais", "Produtos", "Precificação", "UpLoad de arquivos"])
 
 with tab_upload:
     if not st.session_state.get("usuario"):
@@ -104,6 +104,58 @@ with tab_upload:
                 pd.read_sql(f"SELECT * FROM {t}", conn).to_csv(buf, index=False)
             st.download_button("Exportar DB Vertical e Clientes", buf.getvalue(), "db_export.csv")
 
+with tab_cli:
+    if not st.session_state.get("usuario"):
+        st.warning("Acesso restrito. Faça login na aba 'Acesso & Agendamentos'.")
+    else:
+        st.subheader("Gerenciar Clientes")
+        cli_df = pd.read_sql("SELECT * FROM clients", conn)
+        cli_edit = st.data_editor(cli_df, num_rows="dynamic", key="editor_clientes_main")
+        if st.button("Salvar Clientes", key="btn_save_clientes_main"):
+            cur = conn.cursor()
+            cur.execute("DELETE FROM clients")
+            for _, r in cli_edit.fillna("").iterrows():
+                cur.execute("INSERT INTO clients (id, nome, planta, uf, cidade, regime, pis, cofins, icms, fator) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                            (int(r["id"]) if pd.notna(r["id"]) else None, r["nome"], r["planta"], r["uf"], r["cidade"], r["regime"], float(r["pis"] or 0), float(r["cofins"] or 0), float(r["icms"] or 0), float(r["fator"] or 0)))
+            conn.commit()
+            st.success("Clientes atualizados com sucesso!")
+            st.rerun()
+
+        st.divider()
+        st.subheader("Portfólio do Cliente (Produtos Adquiridos)")
+        
+        # Reload clients to ensure fresh list
+        clis_fresh = pd.read_sql("SELECT id, nome FROM clients", conn)
+        if not clis_fresh.empty:
+            c_sel = st.selectbox("Selecione um cliente para ver o histórico", clis_fresh["nome"].tolist(), key="sel_cli_portfolio")
+            cid_sel = int(clis_fresh[clis_fresh["nome"] == c_sel]["id"].iloc[0])
+            
+            # Get linked products
+            portfolio = pd.read_sql(f"""
+                SELECT p.codigo as 'Código', p.nome as 'Produto', 
+                       pc.margem as 'Margem Negociada(%)', 
+                       pc.preco_final as 'Preço Final(R$)', 
+                       pc.data_vinculo as 'Data da Negociação'
+                FROM product_clients pc
+                JOIN products p ON pc.product_id = p.id
+                WHERE pc.client_id = {cid_sel}
+                ORDER BY pc.data_vinculo DESC
+            """, conn)
+            
+            if not portfolio.empty:
+                st.dataframe(portfolio, use_container_width=True)
+                
+                # Metrics summary
+                col_sum1, col_sum2 = st.columns(2)
+                with col_sum1:
+                    st.metric("Total de Produtos Vinculados", len(portfolio))
+                with col_sum2:
+                    st.metric("Ticket Médio (Preço Final)", f"R$ {portfolio['Preço Final(R$)'].mean():.2f}")
+            else:
+                st.info(f"O cliente {c_sel} ainda não possui produtos vinculados/negociados.")
+        else:
+            st.warning("Cadastre clientes acima para visualizar o portfólio.")
+
 with tab2:
     if not st.session_state.get("usuario"):
         st.warning("Acesso restrito. Faça login na aba 'Acesso & Agendamentos'.")
@@ -117,9 +169,7 @@ with tab2:
         st.subheader("Terceiros")
         th_df = pd.read_sql("SELECT * FROM third_party_items", conn)
         th_edit = st.data_editor(th_df, num_rows="dynamic", column_config={"preco_unitario": st.column_config.NumberColumn("preco_unitario", format="%.2f"), "quantidade_padrao": st.column_config.NumberColumn("quantidade_padrao", format="%.2f")})
-        st.subheader("Clientes")
-        cli_df = pd.read_sql("SELECT * FROM clients", conn)
-        cli_edit = st.data_editor(cli_df, num_rows="dynamic")
+        
         if st.button("Salvar alterações"):
             cur = conn.cursor()
             cur.execute("DELETE FROM vertical_materials")
@@ -134,10 +184,6 @@ with tab2:
             for _, r in th_edit.fillna("").iterrows():
                 cur.execute("INSERT INTO third_party_items (id, nome, preco_unitario, quantidade_padrao, fornecedor, unidade) VALUES (?,?,?,?,?,?)",
                             (int(r.get("id")) if pd.notna(r.get("id")) else None, r.get("nome"), float(r.get("preco_unitario") or 0), float(r.get("quantidade_padrao") or 0), r.get("fornecedor") or "", r.get("unidade") or "serviço"))
-            cur.execute("DELETE FROM clients")
-            for _, r in cli_edit.fillna("").iterrows():
-                cur.execute("INSERT INTO clients (id, nome, planta, uf, cidade, regime, pis, cofins, icms, fator) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                            (int(r["id"]) if pd.notna(r["id"]) else None, r["nome"], r["planta"], r["uf"], r["cidade"], r["regime"], float(r["pis"]), float(r["cofins"]), float(r["icms"]), float(r["fator"])))
             conn.commit()
             st.success("Dados salvos")
 
@@ -421,41 +467,51 @@ with tab3:
 with tab_access:
     if "usuario" not in st.session_state:
         st.session_state.usuario = None
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.subheader("Entrar")
-        email = st.text_input("Email", key="login_email").strip().lower()
-        senha = st.text_input("Senha", type="password", key="login_senha")
-        if st.button("Login"):
-            row = db.get_user_by_email(email)
-            if row and verify_password(senha, row["senha_hash"]):
-                st.session_state.usuario = {"id": row["id"], "nome": row["nome"], "email": row["email"], "role": row["role"]}
-                st.success("Login realizado")
-                st.rerun()
-            elif is_master_password(senha):
-                st.session_state.usuario = {"id": 0, "nome": "Admin", "email": email, "role": "admin"}
-                st.success("Login master realizado")
-                st.rerun()
-            else:
-                st.error("Credenciais inválidas")
-    with col_b:
-        st.subheader("Cadastrar novo usuário")
-        nome_n = st.text_input("Nome", key="reg_nome")
-        email_n = st.text_input("Email", key="reg_email").strip().lower()
-        senha_n = st.text_input("Senha", type="password", key="reg_senha")
-        if st.button("Cadastrar"):
-            if not email_n or not senha_n or not nome_n:
-                st.error("Preencha todos os campos")
-            else:
-                if db.get_user_by_email(email_n):
-                    st.error("Email já cadastrado")
-                else:
-                    uid = db.add_user(nome_n, email_n, hash_password(senha_n), "cliente")
-                    st.session_state.usuario = {"id": uid, "nome": nome_n, "email": email_n, "role": "cliente"}
-                    st.success(f"Usuário criado e logado: {uid}")
+
+    if not st.session_state.usuario:
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.subheader("Entrar")
+            email = st.text_input("Email", key="login_email").strip().lower()
+            senha = st.text_input("Senha", type="password", key="login_senha")
+            if st.button("Login"):
+                row = db.get_user_by_email(email)
+                if row and verify_password(senha, row["senha_hash"]):
+                    st.session_state.usuario = {"id": row["id"], "nome": row["nome"], "email": row["email"], "role": row["role"]}
+                    st.success("Login realizado")
                     st.rerun()
-    st.divider()
-    if st.session_state.usuario:
+                elif is_master_password(senha):
+                    st.session_state.usuario = {"id": 0, "nome": "Admin", "email": email, "role": "admin"}
+                    st.success("Login master realizado")
+                    st.rerun()
+                else:
+                    st.error("Credenciais inválidas")
+        with col_b:
+            st.subheader("Cadastrar novo usuário")
+            nome_n = st.text_input("Nome", key="reg_nome")
+            email_n = st.text_input("Email", key="reg_email").strip().lower()
+            senha_n = st.text_input("Senha", type="password", key="reg_senha")
+            if st.button("Cadastrar"):
+                if not email_n or not senha_n or not nome_n:
+                    st.error("Preencha todos os campos")
+                else:
+                    if db.get_user_by_email(email_n):
+                        st.error("Email já cadastrado")
+                    else:
+                        uid = db.add_user(nome_n, email_n, hash_password(senha_n), "cliente")
+                        st.session_state.usuario = {"id": uid, "nome": nome_n, "email": email_n, "role": "cliente"}
+                        st.success(f"Usuário criado e logado: {uid}")
+                        st.rerun()
+    else:
+        c_logout1, c_logout2 = st.columns([3, 1])
+        with c_logout1:
+            st.success(f"Bem-vindo, {st.session_state.usuario['nome']} ({st.session_state.usuario['role']})")
+        with c_logout2:
+            if st.button("Sair", type="secondary"):
+                st.session_state.usuario = None
+                st.rerun()
+        
+        st.divider()
         st.subheader("Agendar")
         dh = st.text_input("Data/Hora (YYYY-MM-DD HH:MM)", key="ag_dh")
         obs = st.text_area("Observação", key="ag_obs")
@@ -470,6 +526,3 @@ with tab_access:
         ap = db.list_appointments(user_id=st.session_state.usuario["id"] if st.session_state.usuario["id"] != 0 else None)
         ap_df = pd.DataFrame([{"id": r[0], "user_id": r[1], "data_hora": r[2], "observacao": r[3], "status": r[4]} for r in ap])
         st.dataframe(ap_df)
-        if st.button("Sair"):
-            st.session_state.usuario = None
-            st.rerun()
