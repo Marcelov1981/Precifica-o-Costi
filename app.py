@@ -179,6 +179,22 @@ with tab3:
         clis = pd.read_sql("SELECT id, nome FROM clients", conn)
         c_opt = st.selectbox("Cliente", clis["nome"].tolist(), index=0, key="cliente_precificacao")
         c_id = int(clis[clis["nome"] == c_opt]["id"].iloc[0])
+        
+        # --- Área de Vínculos Existentes ---
+        with st.expander(f"📦 Ver produtos já vinculados a {c_opt}", expanded=False):
+            existing_links = pd.read_sql(f"""
+                SELECT p.codigo as Código, p.nome as Produto, pc.margem as 'Margem(%)', 
+                       pc.preco_final as 'Preço Negociado(R$)', pc.data_vinculo as 'Data Vínculo'
+                FROM product_clients pc 
+                JOIN products p ON pc.product_id=p.id 
+                WHERE pc.client_id={c_id}
+            """, conn)
+            if not existing_links.empty:
+                st.dataframe(existing_links, use_container_width=True)
+            else:
+                st.info("Nenhum produto vinculado a este cliente ainda.")
+        # -----------------------------------
+
         prods_all = pd.read_sql("SELECT id, codigo, nome FROM products", conn)
         only_linked = st.checkbox("Mostrar apenas produtos vinculados ao cliente", value=False)
         if only_linked:
@@ -373,9 +389,11 @@ with tab3:
                 st.markdown(f"**Admin/Frete/Outros**: R$ {v_adm:.2f} {fmt_pct(v_adm)}")
                 st.markdown(f"**Impostos**: R$ {v_imp:.2f} ({float(res['taxas']['total'])*100:.1f}%)")
             
-            if st.button(f"Salvar orçamento para {c_opt}", key="btn_save_quote"):
+            if st.button(f"💾 Salvar/Atualizar Vínculo com {c_opt}", key="btn_save_quote", type="primary"):
                  db.link_product_client(p_id, c_id, margem, float(res['preco_venda']))
-                 st.success(f"Orçamento salvo para {c_opt} com sucesso!")
+                 st.success(f"Orçamento salvo com sucesso! Produto vinculado a {c_opt}.")
+                 # Force reload to update the list above
+                 st.rerun()
             
             # Graphs
             t1, t2 = st.tabs(["Gráficos", "Histórico de Vínculos"])
