@@ -1,6 +1,7 @@
 import sqlite3
 import os
 from datetime import datetime
+from pricing.auth import hash_password
 
 class Database:
     def __init__(self, path=None):
@@ -232,6 +233,12 @@ class Database:
             cur.execute("SELECT id FROM third_party_items LIMIT 1")
             third_id = cur.fetchone()[0]
             cur.execute("INSERT INTO third_usage (product_id, third_id, quantidade) VALUES (?,?,?)", (product_id, third_id, 1))
+        cur.execute("SELECT COUNT(*) FROM users")
+        if cur.fetchone()[0] == 0:
+            cur.execute(
+                "INSERT INTO users (nome, email, senha_hash, role) VALUES (?,?,?,?)",
+                ("Admin Costi", "admin@costi.com", hash_password("admin"), "admin")
+            )
         conn.commit()
         conn.close()
 

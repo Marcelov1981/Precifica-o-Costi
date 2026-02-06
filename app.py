@@ -406,7 +406,7 @@ with tab_access:
     col_a, col_b = st.columns(2)
     with col_a:
         st.subheader("Entrar")
-        email = st.text_input("Email", key="login_email")
+        email = st.text_input("Email", key="login_email").strip().lower()
         senha = st.text_input("Senha", type="password", key="login_senha")
         if st.button("Login"):
             row = db.get_user_by_email(email)
@@ -423,7 +423,7 @@ with tab_access:
     with col_b:
         st.subheader("Cadastrar novo usuário")
         nome_n = st.text_input("Nome", key="reg_nome")
-        email_n = st.text_input("Email", key="reg_email")
+        email_n = st.text_input("Email", key="reg_email").strip().lower()
         senha_n = st.text_input("Senha", type="password", key="reg_senha")
         if st.button("Cadastrar"):
             if not email_n or not senha_n or not nome_n:
