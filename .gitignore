@@ -5,3 +5,6 @@ precificacao.db
 *.sqlite
 *.pyc
 *.log
+
+Precifica-o-Costi/
+test_sim.db

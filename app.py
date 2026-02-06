@@ -206,137 +206,198 @@ with tab3:
                 mat_names = pd.read_sql("SELECT id, nome FROM vertical_materials", conn)
                 proc_names = pd.read_sql("SELECT id, nome FROM vertical_processes", conn)
                 th_names = pd.read_sql("SELECT id, nome FROM third_party_items", conn)
+                
+                # Load data
                 df_mat = pd.read_sql(f"SELECT vm.nome, mu.quantidade FROM materials_usage mu JOIN vertical_materials vm ON mu.material_id=vm.id WHERE mu.product_id={p_id}", conn)
                 df_proc = pd.read_sql(f"SELECT vp.nome, pu.horas FROM processes_usage pu JOIN vertical_processes vp ON pu.process_id=vp.id WHERE pu.product_id={p_id}", conn)
                 df_th = pd.read_sql(f"SELECT tp.nome, tu.quantidade FROM third_usage tu JOIN third_party_items tp ON tu.third_id=tp.id WHERE tu.product_id={p_id}", conn)
-                df_mat_edit = st.data_editor(
-                    df_mat,
-                    num_rows="dynamic",
-                    column_config={
-                        "nome": st.column_config.TextColumn("Material"),
-                        "quantidade": st.column_config.NumberColumn("Quantidade", min_value=0.0, format="%.2f")
-                    },
-                    key="edit_mat_precif"
-                )
-                df_proc_edit = st.data_editor(
-                    df_proc,
-                    num_rows="dynamic",
-                    column_config={
-                        "nome": st.column_config.TextColumn("Processo"),
-                        "horas": st.column_config.NumberColumn("Horas", min_value=0.0, format="%.2f")
-                    },
-                    key="edit_proc_precif"
-                )
-                df_th_edit = st.data_editor(
-                    df_th,
-                    num_rows="dynamic",
-                    column_config={
-                        "nome": st.column_config.TextColumn("Terceiro"),
-                        "quantidade": st.column_config.NumberColumn("Quantidade", min_value=0.0, format="%.2f")
-                    },
-                    key="edit_third_precif"
-                )
-                if st.button("Salvar composição", key="save_comp_precif"):
+                
+                # Components (Sub-products)
+                comp_prods = pd.read_sql(f"SELECT id, codigo, nome FROM products WHERE id != {p_id}", conn)
+                df_comp = pd.read_sql(f"SELECT p.codigo || ' - ' || p.nome as nome, pc.quantidade FROM product_components pc JOIN products p ON pc.component_product_id=p.id WHERE pc.parent_product_id={p_id}", conn)
+                
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.caption("Materiais")
+                    df_mat_edit = st.data_editor(
+                        df_mat, num_rows="dynamic",
+                        column_config={"nome": st.column_config.TextColumn("Material"), "quantidade": st.column_config.NumberColumn("Qtd", min_value=0.0, format="%.2f")},
+                        key="edit_mat_precif"
+                    )
+                    st.caption("Terceiros")
+                    df_th_edit = st.data_editor(
+                        df_th, num_rows="dynamic",
+                        column_config={"nome": st.column_config.TextColumn("Serviço"), "quantidade": st.column_config.NumberColumn("Qtd", min_value=0.0, format="%.2f")},
+                        key="edit_third_precif"
+                    )
+                with c2:
+                    st.caption("Processos")
+                    df_proc_edit = st.data_editor(
+                        df_proc, num_rows="dynamic",
+                        column_config={"nome": st.column_config.TextColumn("Processo"), "horas": st.column_config.NumberColumn("Horas", min_value=0.0, format="%.2f")},
+                        key="edit_proc_precif"
+                    )
+                    st.caption("Sub-produtos (Conjuntos)")
+                    comp_opts = [f"{r['codigo']} - {r['nome']}" for _, r in comp_prods.iterrows()]
+                    df_comp_edit = st.data_editor(
+                        df_comp, num_rows="dynamic",
+                        column_config={
+                            "nome": st.column_config.SelectboxColumn("Componente", options=comp_opts, required=True),
+                            "quantidade": st.column_config.NumberColumn("Qtd", min_value=0.0, format="%.2f")
+                        },
+                        key="edit_comp_precif"
+                    )
+
+                if st.button("Salvar composição completa", key="save_comp_precif"):
                     db.clear_composition(p_id)
+                    # Save Materials
                     for _, r in df_mat_edit.fillna({"quantidade": 0}).iterrows():
                         nome = str(r.get("nome") or "").strip()
-                        if nome == "":
-                            continue
+                        if not nome: continue
                         qty = float(r.get("quantidade") or 0)
                         if nome in mat_names["nome"].tolist():
                             mid = int(mat_names[mat_names["nome"] == nome]["id"].iloc[0])
                         else:
                             cur = conn.cursor()
-                            cur.execute("INSERT INTO vertical_materials (grupo, subgrupo, nome, ncm, unidade, preco_unitario, fornecedor, data_atualizacao) VALUES (?,?,?,?,?,?,?,?)",
-                                        ("", "", nome, "", "un", 0.0, "", pd.Timestamp.now().strftime("%Y-%m-%d")))
+                            cur.execute("INSERT INTO vertical_materials (grupo, subgrupo, nome, ncm, unidade, preco_unitario, fornecedor, data_atualizacao) VALUES (?,?,?,?,?,?,?,?)", ("", "", nome, "", "un", 0.0, "", pd.Timestamp.now().strftime("%Y-%m-%d")))
                             conn.commit()
                             mid = int(cur.lastrowid)
                             mat_names = pd.read_sql("SELECT id, nome FROM vertical_materials", conn)
                         db.add_material_usage(p_id, mid, round(qty, 2))
+                    # Save Processes
                     for _, r in df_proc_edit.fillna({"horas": 0}).iterrows():
                         nome = str(r.get("nome") or "").strip()
-                        if nome == "":
-                            continue
+                        if not nome: continue
                         hrs = float(r.get("horas") or 0)
                         if nome in proc_names["nome"].tolist():
                             pidp = int(proc_names[proc_names["nome"] == nome]["id"].iloc[0])
                         else:
                             cur = conn.cursor()
-                            cur.execute("INSERT INTO vertical_processes (grupo, subgrupo, nome, preco_unitario_hora, unidade, origem) VALUES (?,?,?,?,?,?)",
-                                        ("", "", nome, 0.0, "hora", "Manual"))
+                            cur.execute("INSERT INTO vertical_processes (grupo, subgrupo, nome, preco_unitario_hora, unidade, origem) VALUES (?,?,?,?,?,?)", ("", "", nome, 0.0, "hora", "Manual"))
                             conn.commit()
                             pidp = int(cur.lastrowid)
                             proc_names = pd.read_sql("SELECT id, nome FROM vertical_processes", conn)
                         db.add_process_usage(p_id, pidp, round(hrs, 2))
+                    # Save Third Party
                     for _, r in df_th_edit.fillna({"quantidade": 0}).iterrows():
                         nome = str(r.get("nome") or "").strip()
-                        if nome == "":
-                            continue
+                        if not nome: continue
                         qty = float(r.get("quantidade") or 0)
                         if nome in th_names["nome"].tolist():
                             tid = int(th_names[th_names["nome"] == nome]["id"].iloc[0])
                         else:
                             cur = conn.cursor()
-                            cur.execute("INSERT INTO third_party_items (nome, preco_unitario, quantidade_padrao, fornecedor, unidade) VALUES (?,?,?,?,?)",
-                                        (nome, 0.0, 1.0, "", "serviço"))
+                            cur.execute("INSERT INTO third_party_items (nome, preco_unitario, quantidade_padrao, fornecedor, unidade) VALUES (?,?,?,?,?)", (nome, 0.0, 1.0, "", "serviço"))
                             conn.commit()
                             tid = int(cur.lastrowid)
                             th_names = pd.read_sql("SELECT id, nome FROM third_party_items", conn)
                         db.add_third_usage(p_id, tid, round(qty, 2))
-                    st.success("Composição salva")
-            with st.expander("Vincular produto a cliente"):
-                cli_df_all = pd.read_sql("SELECT id, nome FROM clients", conn)
-                cli_sel_link = st.selectbox("Cliente", cli_df_all["nome"].tolist(), key="cliente_vinculo_precif")
-                cli_id_sel = int(cli_df_all[cli_df_all["nome"] == cli_sel_link]["id"].iloc[0])
-                col_link1, col_link2 = st.columns(2)
-                with col_link1:
-                    if st.button("Vincular", key="btn_vincular_precif"):
-                        db.link_product_client(p_id, cli_id_sel)
-                        st.success("Produto vinculado ao cliente")
-                with col_link2:
-                    if st.button("Desvincular", key="btn_desvincular_precif"):
-                        db.unlink_product_client(p_id, cli_id_sel)
-                        st.success("Produto desvinculado do cliente")
-                try:
-                    links = pd.read_sql(f"SELECT c.nome FROM product_clients pc JOIN clients c ON c.id=pc.client_id WHERE pc.product_id={p_id}", conn)
-                    st.dataframe(links)
-                except Exception:
-                    st.dataframe(pd.DataFrame(columns=["nome"]))
+                    # Save Components
+                    prod_map = {f"{r['codigo']} - {r['nome']}": r['id'] for _, r in comp_prods.iterrows()}
+                    for _, r in df_comp_edit.fillna({"quantidade": 0}).iterrows():
+                        nome_full = str(r.get("nome") or "")
+                        cid = prod_map.get(nome_full)
+                        if cid:
+                            db.add_component_usage(p_id, cid, float(r.get("quantidade") or 0))
+                    st.success("Composição salva com sucesso!")
+
+        if "calc_res" not in st.session_state:
+            st.session_state.calc_res = None
+
         if p_id and st.button("Calcular preço e margens"):
             res = suggest_sale_price(conn, p_id, c_id, margem, admin_pct, frete_pct, outros_pct)
-            st.metric("Preço de Venda Sugerido", f"R$ {float(res['preco_venda']):.2f}")
-            st.metric("Margem Real", f"{float(res['margem_real_percent']):.2f}%")
+            st.session_state.calc_res = res
+        
+        if st.session_state.calc_res:
+            res = st.session_state.calc_res
             base = res["base"]
-            df = pd.DataFrame({
-                "Etapa": ["Matéria-Prima", "Processos", "Terceiros", "Administrativos", "Impostos", "Margem Líquida"],
-                "Valor (R$)": [
-                    round(float(base["materiais"]), 2),
-                    round(float(base["processos"]), 2),
-                    round(float(base["terceiros"]), 2),
-                    round(float(base["administrativos"]), 2),
-                    round(float(res["impostos_valor"]), 2),
-                    round(float(res["preco_venda"]) * (float(res["margem_real_percent"]) / 100.0), 2)
-                ]
-            })
-            st.dataframe(df)
-            st.caption(f"PIS {float(res['taxas']['pis'])*100:.2f}% • COFINS {float(res['taxas']['cofins'])*100:.2f}% • ICMS {float(res['taxas']['icms'])*100:.2f}%")
-            dados_pareto = pd.DataFrame({
-                "Categoria": ["Insumos", "Processos", "Impostos", "Outros"],
-                "Custo_%": [
-                    float(base["materiais"]/base["sem_impostos"]*100) if base["sem_impostos"] > 0 else 0,
-                    float(base["processos"]/base["sem_impostos"]*100) if base["sem_impostos"] > 0 else 0,
-                    float(res["impostos_valor"]/base["sem_impostos"]*100) if base["sem_impostos"] > 0 else 0,
-                    float(base["administrativos"]/base["sem_impostos"]*100) if base["sem_impostos"] > 0 else 0
-                ]
-            })
-            fig1 = px.pie(pd.DataFrame(dados_pareto).round(2), values="Custo_%", names="Categoria", title="Pareto de Custos")
-            st.plotly_chart(fig1, width='stretch')
-            volumes = np.array([100, 200, 500, 1000])
-            margens = np.round(float(res["margem_real_percent"]) - 0.01 * volumes, 2)
-            fig2 = px.line(x=volumes, y=margens, title="Sensibilidade: Volume x Margem")
-            fig2.update_xaxes(title="Volume Mensal")
-            fig2.update_yaxes(title="Margem %")
-            st.plotly_chart(fig2, width='stretch')
+            
+            st.divider()
+            col_m1, col_m2 = st.columns(2)
+            with col_m1:
+                st.metric("Preço de Venda Sugerido", f"R$ {float(res['preco_venda']):.2f}")
+            with col_m2:
+                st.metric("Margem Real", f"{float(res['margem_real_percent']):.2f}%")
+            
+            # Detailed Breakdown with percentages
+            total_cost = float(base["sem_impostos"])
+            def fmt_pct(val):
+                return f"({(val/total_cost*100) if total_cost > 0 else 0:.1f}%)"
+
+            st.subheader("Detalhamento de Custos")
+            
+            # 1. Materiais
+            total_mat_recursive = float(base["materiais"])
+            with st.expander(f"Materiais: R$ {total_mat_recursive:.2f} {fmt_pct(total_mat_recursive)}", expanded=False):
+                # Direct Materials
+                df_mat_det = pd.read_sql(f"SELECT vm.nome as Item, mu.quantidade as Qtd, vm.preco_unitario as 'Unit(R$)', (mu.quantidade * vm.preco_unitario) as 'Total(R$)' FROM materials_usage mu JOIN vertical_materials vm ON mu.material_id=vm.id WHERE mu.product_id={p_id}", conn)
+                total_mat_direct = df_mat_det["Total(R$)"].sum() if not df_mat_det.empty else 0.0
+                total_mat_indirect = total_mat_recursive - total_mat_direct
+                
+                if not df_mat_det.empty:
+                    st.dataframe(df_mat_det.style.format({"Qtd": "{:.2f}", "Unit(R$)": "{:.2f}", "Total(R$)": "{:.2f}"}), use_container_width=True)
+                
+                if total_mat_indirect > 0.01:
+                    st.info(f"Materiais de Sub-componentes: R$ {total_mat_indirect:.2f}")
+
+            # 2. Processos
+            total_proc_recursive = float(base["processos"])
+            with st.expander(f"Processos: R$ {total_proc_recursive:.2f} {fmt_pct(total_proc_recursive)}", expanded=False):
+                df_proc_det = pd.read_sql(f"SELECT vp.nome as Item, pu.horas as Qtd, vp.preco_unitario_hora as 'Unit(R$)', (pu.horas * vp.preco_unitario_hora) as 'Total(R$)' FROM processes_usage pu JOIN vertical_processes vp ON pu.process_id=vp.id WHERE pu.product_id={p_id}", conn)
+                total_proc_direct = df_proc_det["Total(R$)"].sum() if not df_proc_det.empty else 0.0
+                total_proc_indirect = total_proc_recursive - total_proc_direct
+
+                if not df_proc_det.empty:
+                    st.dataframe(df_proc_det.style.format({"Qtd": "{:.2f}", "Unit(R$)": "{:.2f}", "Total(R$)": "{:.2f}"}), use_container_width=True)
+                
+                if total_proc_indirect > 0.01:
+                    st.info(f"Processos de Sub-componentes: R$ {total_proc_indirect:.2f}")
+
+            # 3. Terceiros
+            total_third_recursive = float(base["terceiros"])
+            with st.expander(f"Terceiros: R$ {total_third_recursive:.2f} {fmt_pct(total_third_recursive)}", expanded=False):
+                df_third_det = pd.read_sql(f"SELECT tp.nome as Item, tu.quantidade as Qtd, tp.preco_unitario as 'Unit(R$)', (tu.quantidade * tp.preco_unitario) as 'Total(R$)' FROM third_usage tu JOIN third_party_items tp ON tu.third_id=tp.id WHERE tu.product_id={p_id}", conn)
+                total_third_direct = df_third_det["Total(R$)"].sum() if not df_third_det.empty else 0.0
+                total_third_indirect = total_third_recursive - total_third_direct
+
+                if not df_third_det.empty:
+                    st.dataframe(df_third_det.style.format({"Qtd": "{:.2f}", "Unit(R$)": "{:.2f}", "Total(R$)": "{:.2f}"}), use_container_width=True)
+                
+                if total_third_indirect > 0.01:
+                    st.info(f"Terceiros de Sub-componentes: R$ {total_third_indirect:.2f}")
+
+            # 4. Admin/Outros/Impostos
+            v_adm = float(base["administrativos"])
+            v_imp = float(res["impostos_valor"])
+            with st.expander(f"Outros Custos & Impostos: R$ {v_adm+v_imp:.2f}", expanded=False):
+                st.markdown(f"**Admin/Frete/Outros**: R$ {v_adm:.2f} {fmt_pct(v_adm)}")
+                st.markdown(f"**Impostos**: R$ {v_imp:.2f} ({float(res['taxas']['total'])*100:.1f}%)")
+            
+            if st.button(f"Salvar orçamento para {c_opt}", key="btn_save_quote"):
+                 db.link_product_client(p_id, c_id, margem, float(res['preco_venda']))
+                 st.success(f"Orçamento salvo para {c_opt} com sucesso!")
+            
+            # Graphs
+            t1, t2 = st.tabs(["Gráficos", "Histórico de Vínculos"])
+            with t1:
+                dados_pareto = pd.DataFrame({
+                    "Categoria": ["Insumos", "Processos", "Impostos", "Admin/Outros"],
+                    "Custo_%": [
+                        float(base["materiais"]/base["sem_impostos"]*100) if base["sem_impostos"] > 0 else 0,
+                        float(base["processos"]/base["sem_impostos"]*100) if base["sem_impostos"] > 0 else 0,
+                        float(res["impostos_valor"]/base["sem_impostos"]*100) if base["sem_impostos"] > 0 else 0,
+                        float(base["administrativos"]/base["sem_impostos"]*100) if base["sem_impostos"] > 0 else 0
+                    ]
+                })
+                fig1 = px.pie(pd.DataFrame(dados_pareto).round(2), values="Custo_%", names="Categoria", title="Pareto de Custos")
+                st.plotly_chart(fig1, use_container_width=True)
+            with t2:
+                 try:
+                    links = pd.read_sql(f"SELECT c.nome as Cliente, pc.margem as 'Margem(%)', pc.preco_final as 'Preço(R$)', pc.data_vinculo as Data FROM product_clients pc JOIN clients c ON c.id=pc.client_id WHERE pc.product_id={p_id}", conn)
+                    st.dataframe(links)
+                 except Exception:
+                    st.write("Nenhum vínculo encontrado.")
+
 
 
 with tab_access:

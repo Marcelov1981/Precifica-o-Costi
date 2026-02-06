@@ -12,16 +12,48 @@ def get_base_cost(conn, product_id):
     custo_processos = sum((_d(r[0]) * _d(r[1]) for r in cur.fetchall()), _d(0))
     cur.execute("""SELECT tu.quantidade, tp.preco_unitario FROM third_usage tu JOIN third_party_items tp ON tu.third_id=tp.id WHERE tu.product_id=?""", (product_id,))
     custo_terceiros = sum((_d(r[0]) * _d(r[1]) for r in cur.fetchall()), _d(0))
+    
+    # Recursive cost for sub-components (conjuntos)
+    cur.execute("SELECT component_product_id, quantidade FROM product_components WHERE parent_product_id=?", (product_id,))
+    components = cur.fetchall()
+    custo_componentes_materiais = _d(0)
+    custo_componentes_processos = _d(0)
+    custo_componentes_terceiros = _d(0)
+    
+    for comp in components:
+        comp_id = comp[0]
+        comp_qty = _d(comp[1])
+        # Recursive call
+        comp_cost = get_base_cost(conn, comp_id)
+        custo_componentes_materiais += comp_cost["materiais"] * comp_qty
+        custo_componentes_processos += comp_cost["processos"] * comp_qty
+        custo_componentes_terceiros += comp_cost["terceiros"] * comp_qty
+
+    total_materiais = custo_materiais + custo_componentes_materiais
+    total_processos = custo_processos + custo_componentes_processos
+    total_terceiros = custo_terceiros + custo_componentes_terceiros
+
     cur.execute("SELECT SUM(valor) FROM admin_costs")
     v = cur.fetchone()[0]
     custo_admin = _d(v or 0)
-    custo_sem_impostos = custo_materiais + custo_processos + custo_terceiros + custo_admin
+    
+    # admin cost is usually not recursive if it's a fixed value, but if it's percentage it's calculated later.
+    # We will exclude fixed admin cost from recursion to avoid double counting if it's per product? 
+    # Actually, for sub-assemblies, admin cost might be already included? 
+    # Let's keep the logic simple: Roll up direct costs (Mat, Proc, Third). Admin/Markup is applied at top level or per level?
+    # Usually overheads are applied at the finished good level. 
+    # So we only roll up Mat, Proc, Third.
+
+    custo_sem_impostos = total_materiais + total_processos + total_terceiros + custo_admin
     return {
-        "materiais": custo_materiais,
-        "processos": custo_processos,
-        "terceiros": custo_terceiros,
+        "materiais": total_materiais,
+        "processos": total_processos,
+        "terceiros": total_terceiros,
         "administrativos": custo_admin,
         "sem_impostos": custo_sem_impostos,
+        "own_materiais": custo_materiais, # Keep track of own vs components if needed
+        "own_processos": custo_processos,
+        "own_terceiros": custo_terceiros
     }
 
 def _tax_rate_for_product(conn, product_id, client_id):

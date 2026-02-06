@@ -105,7 +105,27 @@ class Database:
         CREATE TABLE IF NOT EXISTS product_clients (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             product_id INTEGER,
-            client_id INTEGER
+            client_id INTEGER,
+            margem REAL,
+            preco_final REAL,
+            data_vinculo TEXT
+        )
+        """)
+        cur.execute("PRAGMA table_info(product_clients)")
+        pc_cols = [r[1] for r in cur.fetchall()]
+        if "margem" not in pc_cols:
+            cur.execute("ALTER TABLE product_clients ADD COLUMN margem REAL")
+        if "preco_final" not in pc_cols:
+            cur.execute("ALTER TABLE product_clients ADD COLUMN preco_final REAL")
+        if "data_vinculo" not in pc_cols:
+            cur.execute("ALTER TABLE product_clients ADD COLUMN data_vinculo TEXT")
+
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS product_components (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            parent_product_id INTEGER,
+            component_product_id INTEGER,
+            quantidade REAL
         )
         """)
         cur.execute("PRAGMA table_info(products)")
@@ -242,6 +262,7 @@ class Database:
         conn.execute("DELETE FROM processes_usage WHERE product_id=?", (product_id,))
         conn.execute("DELETE FROM third_usage WHERE product_id=?", (product_id,))
         conn.execute("DELETE FROM product_clients WHERE product_id=?", (product_id,))
+        conn.execute("DELETE FROM product_components WHERE parent_product_id=?", (product_id,))
         conn.execute("DELETE FROM products WHERE id=?", (product_id,))
         conn.commit()
         conn.close()
@@ -264,17 +285,31 @@ class Database:
         conn.commit()
         conn.close()
 
+    def add_component_usage(self, product_id, component_id, quantidade):
+        conn = self.connect()
+        conn.execute("INSERT INTO product_components (parent_product_id, component_product_id, quantidade) VALUES (?,?,?)", (product_id, component_id, quantidade))
+        conn.commit()
+        conn.close()
+
     def clear_composition(self, product_id):
         conn = self.connect()
         conn.execute("DELETE FROM materials_usage WHERE product_id=?", (product_id,))
         conn.execute("DELETE FROM processes_usage WHERE product_id=?", (product_id,))
         conn.execute("DELETE FROM third_usage WHERE product_id=?", (product_id,))
+        conn.execute("DELETE FROM product_components WHERE parent_product_id=?", (product_id,))
         conn.commit()
         conn.close()
 
-    def link_product_client(self, product_id, client_id):
+    def link_product_client(self, product_id, client_id, margem=0.0, preco_final=0.0):
         conn = self.connect()
-        conn.execute("INSERT INTO product_clients (product_id, client_id) VALUES (?,?)", (product_id, client_id))
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM product_clients WHERE product_id=? AND client_id=?", (product_id, client_id))
+        row = cur.fetchone()
+        data_vinculo = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if row:
+            cur.execute("UPDATE product_clients SET margem=?, preco_final=?, data_vinculo=? WHERE id=?", (margem, preco_final, data_vinculo, row[0]))
+        else:
+            cur.execute("INSERT INTO product_clients (product_id, client_id, margem, preco_final, data_vinculo) VALUES (?,?,?,?,?)", (product_id, client_id, margem, preco_final, data_vinculo))
         conn.commit()
         conn.close()
 
