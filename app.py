@@ -413,9 +413,11 @@ with tab_access:
             if row and verify_password(senha, row["senha_hash"]):
                 st.session_state.usuario = {"id": row["id"], "nome": row["nome"], "email": row["email"], "role": row["role"]}
                 st.success("Login realizado")
+                st.rerun()
             elif is_master_password(senha):
                 st.session_state.usuario = {"id": 0, "nome": "Admin", "email": email, "role": "admin"}
                 st.success("Login master realizado")
+                st.rerun()
             else:
                 st.error("Credenciais inválidas")
     with col_b:
@@ -431,7 +433,9 @@ with tab_access:
                     st.error("Email já cadastrado")
                 else:
                     uid = db.add_user(nome_n, email_n, hash_password(senha_n), "cliente")
-                    st.success(f"Usuário criado: {uid}")
+                    st.session_state.usuario = {"id": uid, "nome": nome_n, "email": email_n, "role": "cliente"}
+                    st.success(f"Usuário criado e logado: {uid}")
+                    st.rerun()
     st.divider()
     if st.session_state.usuario:
         st.subheader("Agendar")
@@ -450,3 +454,4 @@ with tab_access:
         st.dataframe(ap_df)
         if st.button("Sair"):
             st.session_state.usuario = None
+            st.rerun()
