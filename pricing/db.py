@@ -58,23 +58,6 @@ class Database:
             unidade TEXT
         )
         """)
-        # Ensure unidade column exists for third_party_items
-        cur.execute("PRAGMA table_info(third_party_items)")
-        tp_cols = [r[1] for r in cur.fetchall()]
-        if "unidade" not in tp_cols:
-            cur.execute("ALTER TABLE third_party_items ADD COLUMN unidade TEXT")
-        cur.execute("PRAGMA table_info(vertical_materials)")
-        vm_cols = [r[1] for r in cur.fetchall()]
-        if "codigo" not in vm_cols:
-            cur.execute("ALTER TABLE vertical_materials ADD COLUMN codigo TEXT")
-        cur.execute("PRAGMA table_info(vertical_processes)")
-        vp_cols = [r[1] for r in cur.fetchall()]
-        if "maquina" not in vp_cols:
-            cur.execute("ALTER TABLE vertical_processes ADD COLUMN maquina TEXT")
-        cur.execute("PRAGMA table_info(clients)")
-        cl_cols = [r[1] for r in cur.fetchall()]
-        if "codigo" not in cl_cols:
-            cur.execute("ALTER TABLE clients ADD COLUMN codigo TEXT")
         cur.execute("""
         CREATE TABLE IF NOT EXISTS admin_costs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -97,6 +80,23 @@ class Database:
             fator REAL
         )
         """)
+        # Ensure compatibility/extra columns for existing databases
+        cur.execute("PRAGMA table_info(third_party_items)")
+        tp_cols = [r[1] for r in cur.fetchall()]
+        if "unidade" not in tp_cols:
+            cur.execute("ALTER TABLE third_party_items ADD COLUMN unidade TEXT")
+        cur.execute("PRAGMA table_info(vertical_materials)")
+        vm_cols = [r[1] for r in cur.fetchall()]
+        if "codigo" not in vm_cols:
+            cur.execute("ALTER TABLE vertical_materials ADD COLUMN codigo TEXT")
+        cur.execute("PRAGMA table_info(vertical_processes)")
+        vp_cols = [r[1] for r in cur.fetchall()]
+        if "maquina" not in vp_cols:
+            cur.execute("ALTER TABLE vertical_processes ADD COLUMN maquina TEXT")
+        cur.execute("PRAGMA table_info(clients)")
+        cl_cols = [r[1] for r in cur.fetchall()]
+        if "codigo" not in cl_cols:
+            cur.execute("ALTER TABLE clients ADD COLUMN codigo TEXT")
         cur.execute("""
         CREATE TABLE IF NOT EXISTS ncm_taxes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
