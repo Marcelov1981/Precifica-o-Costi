@@ -25,6 +25,7 @@ class Database:
         cur.execute("""
         CREATE TABLE IF NOT EXISTS vertical_materials (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT,
             grupo TEXT,
             subgrupo TEXT,
             nome TEXT,
@@ -43,7 +44,8 @@ class Database:
             nome TEXT,
             preco_unitario_hora REAL,
             unidade TEXT,
-            origem TEXT
+            origem TEXT,
+            maquina TEXT
         )
         """)
         cur.execute("""
@@ -61,6 +63,18 @@ class Database:
         tp_cols = [r[1] for r in cur.fetchall()]
         if "unidade" not in tp_cols:
             cur.execute("ALTER TABLE third_party_items ADD COLUMN unidade TEXT")
+        cur.execute("PRAGMA table_info(vertical_materials)")
+        vm_cols = [r[1] for r in cur.fetchall()]
+        if "codigo" not in vm_cols:
+            cur.execute("ALTER TABLE vertical_materials ADD COLUMN codigo TEXT")
+        cur.execute("PRAGMA table_info(vertical_processes)")
+        vp_cols = [r[1] for r in cur.fetchall()]
+        if "maquina" not in vp_cols:
+            cur.execute("ALTER TABLE vertical_processes ADD COLUMN maquina TEXT")
+        cur.execute("PRAGMA table_info(clients)")
+        cl_cols = [r[1] for r in cur.fetchall()]
+        if "codigo" not in cl_cols:
+            cur.execute("ALTER TABLE clients ADD COLUMN codigo TEXT")
         cur.execute("""
         CREATE TABLE IF NOT EXISTS admin_costs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -71,6 +85,7 @@ class Database:
         cur.execute("""
         CREATE TABLE IF NOT EXISTS clients (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT,
             nome TEXT,
             planta TEXT,
             uf TEXT,
@@ -99,7 +114,9 @@ class Database:
             quantidade REAL,
             destino_uf TEXT,
             ncm TEXT,
-            local_fabricacao_uf TEXT
+            local_fabricacao_uf TEXT,
+            grupo TEXT,
+            subgrupo TEXT
         )
         """)
         cur.execute("""
@@ -122,6 +139,23 @@ class Database:
             cur.execute("ALTER TABLE product_clients ADD COLUMN data_vinculo TEXT")
 
         cur.execute("""
+        CREATE TABLE IF NOT EXISTS product_cost_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id INTEGER,
+            client_id INTEGER,
+            data_vinculo TEXT,
+            custo_materiais REAL,
+            custo_processos REAL,
+            custo_terceiros REAL,
+            custos_admin REAL,
+            impostos REAL,
+            custo_total_sem_impostos REAL,
+            preco_final REAL,
+            margem REAL
+        )
+        """)
+
+        cur.execute("""
         CREATE TABLE IF NOT EXISTS product_components (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             parent_product_id INTEGER,
@@ -133,6 +167,10 @@ class Database:
         cols = [r[1] for r in cur.fetchall()]
         if "codigo" not in cols:
             cur.execute("ALTER TABLE products ADD COLUMN codigo TEXT")
+        if "grupo" not in cols:
+            cur.execute("ALTER TABLE products ADD COLUMN grupo TEXT")
+        if "subgrupo" not in cols:
+            cur.execute("ALTER TABLE products ADD COLUMN subgrupo TEXT")
         cur.execute("""
         CREATE TABLE IF NOT EXISTS materials_usage (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -190,8 +228,8 @@ class Database:
         cur.execute("SELECT COUNT(*) FROM vertical_processes")
         if cur.fetchone()[0] == 0:
             cur.execute(
-                "INSERT INTO vertical_processes (grupo, subgrupo, nome, preco_unitario_hora, unidade, origem) VALUES (?,?,?,?,?,?)",
-                ("Usinagem", "CNC", "Fresamento CNC", 120.0, "hora", "Planilha 1")
+                "INSERT INTO vertical_processes (grupo, subgrupo, nome, preco_unitario_hora, unidade, origem, maquina) VALUES (?,?,?,?,?,?,?)",
+                ("Usinagem", "CNC", "Fresamento CNC", 120.0, "hora", "Planilha 1", "CNC-01")
             )
         cur.execute("SELECT COUNT(*) FROM third_party_items")
         if cur.fetchone()[0] == 0:
@@ -208,8 +246,8 @@ class Database:
         cur.execute("SELECT COUNT(*) FROM clients")
         if cur.fetchone()[0] == 0:
             cur.execute(
-                "INSERT INTO clients (nome, planta, uf, cidade, regime, pis, cofins, icms, fator) VALUES (?,?,?,?,?,?,?,?,?)",
-                ("Cliente Demo", "Planta 1", "SP", "São Paulo", "real", 0.0165, 0.076, 0.12, 1.0)
+                "INSERT INTO clients (codigo, nome, planta, uf, cidade, regime, pis, cofins, icms, fator) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                ("00000000000191", "Cliente Demo", "Planta 1", "SP", "São Paulo", "real", 0.0165, 0.076, 0.12, 1.0)
             )
         cur.execute("SELECT COUNT(*) FROM ncm_taxes")
         if cur.fetchone()[0] == 0:
@@ -220,8 +258,8 @@ class Database:
         cur.execute("SELECT COUNT(*) FROM products")
         if cur.fetchone()[0] == 0:
             cur.execute(
-                "INSERT INTO products (codigo, nome, quantidade, destino_uf, ncm, local_fabricacao_uf) VALUES (?,?,?,?,?,?)",
-                ("PRD-0001", "Conjunto Mecânico", 1, "SP", "8421.99.90", "SP")
+                "INSERT INTO products (codigo, nome, quantidade, destino_uf, ncm, local_fabricacao_uf, grupo, subgrupo) VALUES (?,?,?,?,?,?,?,?)",
+                ("PRD-0001", "Conjunto Mecânico", 1, "SP", "8421.99.90", "SP", "GERAL", "CONJUNTO")
             )
             product_id = cur.lastrowid
             cur.execute("SELECT id FROM vertical_materials LIMIT 1")
@@ -242,23 +280,23 @@ class Database:
         conn.commit()
         conn.close()
 
-    def add_product(self, codigo, nome, quantidade, destino_uf, ncm, local_fabricacao_uf):
+    def add_product(self, codigo, nome, quantidade, destino_uf, ncm, local_fabricacao_uf, grupo=None, subgrupo=None):
         conn = self.connect()
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO products (codigo, nome, quantidade, destino_uf, ncm, local_fabricacao_uf) VALUES (?,?,?,?,?,?)",
-            (codigo, nome, quantidade, destino_uf, ncm, local_fabricacao_uf)
+            "INSERT INTO products (codigo, nome, quantidade, destino_uf, ncm, local_fabricacao_uf, grupo, subgrupo) VALUES (?,?,?,?,?,?,?,?)",
+            (codigo, nome, quantidade, destino_uf, ncm, local_fabricacao_uf, grupo, subgrupo)
         )
         conn.commit()
         pid = cur.lastrowid
         conn.close()
         return pid
 
-    def update_product(self, product_id, codigo, nome, quantidade, destino_uf, ncm, local_fabricacao_uf):
+    def update_product(self, product_id, codigo, nome, quantidade, destino_uf, ncm, local_fabricacao_uf, grupo=None, subgrupo=None):
         conn = self.connect()
         conn.execute(
-            "UPDATE products SET codigo=?, nome=?, quantidade=?, destino_uf=?, ncm=?, local_fabricacao_uf=? WHERE id=?",
-            (codigo, nome, quantidade, destino_uf, ncm, local_fabricacao_uf, product_id)
+            "UPDATE products SET codigo=?, nome=?, quantidade=?, destino_uf=?, ncm=?, local_fabricacao_uf=?, grupo=?, subgrupo=? WHERE id=?",
+            (codigo, nome, quantidade, destino_uf, ncm, local_fabricacao_uf, grupo, subgrupo, product_id)
         )
         conn.commit()
         conn.close()
@@ -317,6 +355,38 @@ class Database:
             cur.execute("UPDATE product_clients SET margem=?, preco_final=?, data_vinculo=? WHERE id=?", (margem, preco_final, data_vinculo, row[0]))
         else:
             cur.execute("INSERT INTO product_clients (product_id, client_id, margem, preco_final, data_vinculo) VALUES (?,?,?,?,?)", (product_id, client_id, margem, preco_final, data_vinculo))
+        conn.commit()
+        conn.close()
+
+    def add_cost_history(self, product_id, client_id, custo_materiais, custo_processos, custo_terceiros, custos_admin, impostos, preco_final, margem, data_vinculo=None):
+        conn = self.connect()
+        cur = conn.cursor()
+        if data_vinculo is None:
+            data_vinculo = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        custo_total_sem_impostos = (custo_materiais or 0) + (custo_processos or 0) + (custo_terceiros or 0) + (custos_admin or 0)
+        cur.execute(
+            """
+            INSERT INTO product_cost_history (
+                product_id, client_id, data_vinculo,
+                custo_materiais, custo_processos, custo_terceiros,
+                custos_admin, impostos, custo_total_sem_impostos,
+                preco_final, margem
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                product_id,
+                client_id,
+                data_vinculo,
+                float(custo_materiais or 0),
+                float(custo_processos or 0),
+                float(custo_terceiros or 0),
+                float(custos_admin or 0),
+                float(impostos or 0),
+                float(custo_total_sem_impostos),
+                float(preco_final or 0),
+                float(margem or 0),
+            ),
+        )
         conn.commit()
         conn.close()
 

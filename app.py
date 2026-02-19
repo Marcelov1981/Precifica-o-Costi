@@ -110,13 +110,31 @@ with tab_cli:
     else:
         st.subheader("Gerenciar Clientes")
         cli_df = pd.read_sql("SELECT * FROM clients", conn)
-        cli_edit = st.data_editor(cli_df, num_rows="dynamic", key="editor_clientes_main")
+        cli_edit = st.data_editor(
+            cli_df,
+            num_rows="dynamic",
+            key="editor_clientes_main",
+        )
         if st.button("Salvar Clientes", key="btn_save_clientes_main"):
             cur = conn.cursor()
             cur.execute("DELETE FROM clients")
             for _, r in cli_edit.fillna("").iterrows():
-                cur.execute("INSERT INTO clients (id, nome, planta, uf, cidade, regime, pis, cofins, icms, fator) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                            (int(r["id"]) if pd.notna(r["id"]) else None, r["nome"], r["planta"], r["uf"], r["cidade"], r["regime"], float(r["pis"] or 0), float(r["cofins"] or 0), float(r["icms"] or 0), float(r["fator"] or 0)))
+                cur.execute(
+                    "INSERT INTO clients (id, codigo, nome, planta, uf, cidade, regime, pis, cofins, icms, fator) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        int(r["id"]) if pd.notna(r["id"]) else None,
+                        str(r.get("codigo") or "").strip(),
+                        r["nome"],
+                        r["planta"],
+                        r["uf"],
+                        r["cidade"],
+                        r["regime"],
+                        float(r["pis"] or 0),
+                        float(r["cofins"] or 0),
+                        float(r["icms"] or 0),
+                        float(r["fator"] or 0),
+                    ),
+                )
             conn.commit()
             st.success("Clientes atualizados com sucesso!")
             st.rerun()
@@ -162,10 +180,57 @@ with tab2:
     else:
         st.subheader("Materiais")
         mat_df = pd.read_sql("SELECT * FROM vertical_materials", conn)
-        mat_edit = st.data_editor(mat_df, num_rows="dynamic", column_config={"preco_unitario": st.column_config.NumberColumn("preco_unitario", format="%.2f")})
+        mat_edit = st.data_editor(
+            mat_df,
+            num_rows="dynamic",
+            column_config={
+                "preco_unitario": st.column_config.NumberColumn("preco_unitario", format="%.2f")
+            },
+        )
+        if not mat_df.empty:
+            col_dup1, col_dup2 = st.columns([3, 1])
+            with col_dup1:
+                mat_labels = [
+                    f"{str(r.get('codigo') or '')} - {r['nome']}" if r.get("codigo") else r["nome"]
+                    for _, r in mat_df.iterrows()
+                ]
+                mat_choice = st.selectbox(
+                    "Selecionar material para duplicar",
+                    mat_labels,
+                    key="sel_material_dup",
+                )
+                sel_idx = mat_labels.index(mat_choice) if mat_choice in mat_labels else None
+            with col_dup2:
+                if st.button("Duplicar material selecionado", key="btn_dup_material") and sel_idx is not None:
+                    src = mat_df.iloc[sel_idx]
+                    novo_codigo = (str(src.get("codigo") or "").strip() + "_COPY") if src.get("codigo") else ""
+                    cur = conn.cursor()
+                    cur.execute(
+                        "INSERT INTO vertical_materials (codigo, grupo, subgrupo, nome, ncm, unidade, preco_unitario, fornecedor, data_atualizacao) VALUES (?,?,?,?,?,?,?,?,?)",
+                        (
+                            novo_codigo,
+                            src["grupo"],
+                            src["subgrupo"],
+                            src["nome"],
+                            src["ncm"],
+                            src["unidade"],
+                            float(src["preco_unitario"] or 0),
+                            src["fornecedor"],
+                            src["data_atualizacao"],
+                        ),
+                    )
+                    conn.commit()
+                    st.success("Material duplicado com sucesso. Ajuste os dados conforme necessário.")
+                    st.rerun()
         st.subheader("Processos")
         proc_df = pd.read_sql("SELECT * FROM vertical_processes", conn)
-        proc_edit = st.data_editor(proc_df, num_rows="dynamic", column_config={"preco_unitario_hora": st.column_config.NumberColumn("preco_unitario_hora", format="%.2f")})
+        proc_edit = st.data_editor(
+            proc_df,
+            num_rows="dynamic",
+            column_config={
+                "preco_unitario_hora": st.column_config.NumberColumn("preco_unitario_hora", format="%.2f")
+            },
+        )
         st.subheader("Terceiros")
         th_df = pd.read_sql("SELECT * FROM third_party_items", conn)
         th_edit = st.data_editor(th_df, num_rows="dynamic", column_config={"preco_unitario": st.column_config.NumberColumn("preco_unitario", format="%.2f"), "quantidade_padrao": st.column_config.NumberColumn("quantidade_padrao", format="%.2f")})
@@ -174,12 +239,36 @@ with tab2:
             cur = conn.cursor()
             cur.execute("DELETE FROM vertical_materials")
             for _, r in mat_edit.fillna("").iterrows():
-                cur.execute("INSERT INTO vertical_materials (id, grupo, subgrupo, nome, ncm, unidade, preco_unitario, fornecedor, data_atualizacao) VALUES (?,?,?,?,?,?,?,?,?)",
-                            (int(r["id"]) if pd.notna(r["id"]) else None, r["grupo"], r["subgrupo"], r["nome"], r["ncm"], r["unidade"], float(r["preco_unitario"]), r["fornecedor"], r["data_atualizacao"]))
+                cur.execute(
+                    "INSERT INTO vertical_materials (id, codigo, grupo, subgrupo, nome, ncm, unidade, preco_unitario, fornecedor, data_atualizacao) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        int(r["id"]) if pd.notna(r["id"]) else None,
+                        str(r.get("codigo") or "").strip(),
+                        r["grupo"],
+                        r["subgrupo"],
+                        r["nome"],
+                        r["ncm"],
+                        r["unidade"],
+                        float(r["preco_unitario"]),
+                        r["fornecedor"],
+                        r["data_atualizacao"],
+                    ),
+                )
             cur.execute("DELETE FROM vertical_processes")
             for _, r in proc_edit.fillna("").iterrows():
-                cur.execute("INSERT INTO vertical_processes (id, grupo, subgrupo, nome, preco_unitario_hora, unidade, origem) VALUES (?,?,?,?,?,?,?)",
-                            (int(r["id"]) if pd.notna(r["id"]) else None, r["grupo"], r["subgrupo"], r["nome"], float(r["preco_unitario_hora"]), r["unidade"], r["origem"]))
+                cur.execute(
+                    "INSERT INTO vertical_processes (id, grupo, subgrupo, nome, preco_unitario_hora, unidade, origem, maquina) VALUES (?,?,?,?,?,?,?,?)",
+                    (
+                        int(r["id"]) if pd.notna(r["id"]) else None,
+                        r["grupo"],
+                        r["subgrupo"],
+                        r["nome"],
+                        float(r["preco_unitario_hora"]),
+                        r["unidade"],
+                        r["origem"],
+                        r.get("maquina"),
+                    ),
+                )
             cur.execute("DELETE FROM third_party_items")
             for _, r in th_edit.fillna("").iterrows():
                 cur.execute("INSERT INTO third_party_items (id, nome, preco_unitario, quantidade_padrao, fornecedor, unidade) VALUES (?,?,?,?,?,?)",
@@ -193,16 +282,18 @@ with tab_prod:
     else:
         st.subheader("Criar produto")
         codigo = st.text_input("Código")
+        grupo_p = st.text_input("Grupo do produto")
+        subgrupo_p = st.text_input("Subgrupo do produto")
         nome_p = st.text_input("Nome")
         quantidade_p = st.number_input("Quantidade", value=1.0, min_value=0.0, step=1.0)
         destino_uf_p = st.text_input("UF destino")
         ncm_p = st.text_input("NCM")
         origem_uf_p = st.text_input("UF fabricação")
         if st.button("Criar produto"):
-            pid = db.add_product(codigo, nome_p, quantidade_p, destino_uf_p, ncm_p, origem_uf_p)
+            pid = db.add_product(codigo, nome_p, quantidade_p, destino_uf_p, ncm_p, origem_uf_p, grupo_p, subgrupo_p)
             st.success(f"Produto criado: ID {pid}")
         st.subheader("Editar produtos (planilha)")
-        produtos_orig = pd.read_sql("SELECT id, codigo, nome, quantidade, destino_uf, ncm, local_fabricacao_uf FROM products", conn)
+        produtos_orig = pd.read_sql("SELECT id, codigo, nome, quantidade, destino_uf, ncm, local_fabricacao_uf, grupo, subgrupo FROM products", conn)
         produtos_edit = st.data_editor(produtos_orig, num_rows="dynamic", column_config={"quantidade": st.column_config.NumberColumn("quantidade", format="%.2f")})
         if st.button("Salvar produtos"):
             ids_orig = set(produtos_orig["id"].tolist())
@@ -212,9 +303,28 @@ with tab_prod:
                 db.delete_product_cascade(int(pid))
             for _, r in produtos_edit.fillna("").iterrows():
                 if "id" in produtos_edit.columns and pd.notna(r["id"]):
-                    db.update_product(int(r["id"]), r["codigo"], r["nome"], float(r["quantidade"]) if r["quantidade"] != "" else 0.0, r["destino_uf"], r["ncm"], r["local_fabricacao_uf"])
+                    db.update_product(
+                        int(r["id"]),
+                        r["codigo"],
+                        r["nome"],
+                        float(r["quantidade"]) if r["quantidade"] != "" else 0.0,
+                        r["destino_uf"],
+                        r["ncm"],
+                        r["local_fabricacao_uf"],
+                        r.get("grupo"),
+                        r.get("subgrupo"),
+                    )
                 else:
-                    db.add_product(r["codigo"], r["nome"], float(r["quantidade"]) if r["quantidade"] != "" else 0.0, r["destino_uf"], r["ncm"], r["local_fabricacao_uf"])
+                    db.add_product(
+                        r["codigo"],
+                        r["nome"],
+                        float(r["quantidade"]) if r["quantidade"] != "" else 0.0,
+                        r["destino_uf"],
+                        r["ncm"],
+                        r["local_fabricacao_uf"],
+                        r.get("grupo"),
+                        r.get("subgrupo"),
+                    )
             st.success("Produtos salvos")
         # Removido: composição e vínculo do produto aqui. Agora ficam na aba Precificação.
 
@@ -388,61 +498,207 @@ with tab3:
 
             st.subheader("Detalhamento de Custos")
             
-            # 1. Materiais
             total_mat_recursive = float(base["materiais"])
+            df_mat_det = pd.read_sql(
+                f"SELECT vm.nome as Item, mu.quantidade as Qtd, vm.preco_unitario as 'Unit(R$)', "
+                f"(mu.quantidade * vm.preco_unitario) as 'Total(R$)' "
+                f"FROM materials_usage mu JOIN vertical_materials vm ON mu.material_id=vm.id "
+                f"WHERE mu.product_id={p_id}",
+                conn,
+            )
+            total_mat_direct = df_mat_det["Total(R$)"].sum() if not df_mat_det.empty else 0.0
+            total_mat_indirect = total_mat_recursive - total_mat_direct
+
             with st.expander(f"Materiais: R$ {total_mat_recursive:.2f} {fmt_pct(total_mat_recursive)}", expanded=False):
-                # Direct Materials
-                df_mat_det = pd.read_sql(f"SELECT vm.nome as Item, mu.quantidade as Qtd, vm.preco_unitario as 'Unit(R$)', (mu.quantidade * vm.preco_unitario) as 'Total(R$)' FROM materials_usage mu JOIN vertical_materials vm ON mu.material_id=vm.id WHERE mu.product_id={p_id}", conn)
-                total_mat_direct = df_mat_det["Total(R$)"].sum() if not df_mat_det.empty else 0.0
-                total_mat_indirect = total_mat_recursive - total_mat_direct
-                
                 if not df_mat_det.empty:
-                    st.dataframe(df_mat_det.style.format({"Qtd": "{:.2f}", "Unit(R$)": "{:.2f}", "Total(R$)": "{:.2f}"}), use_container_width=True)
-                
+                    st.dataframe(
+                        df_mat_det.style.format(
+                            {"Qtd": "{:.2f}", "Unit(R$)": "{:.2f}", "Total(R$)": "{:.2f}"}
+                        ),
+                        use_container_width=True,
+                    )
                 if total_mat_indirect > 0.01:
                     st.info(f"Materiais de Sub-componentes: R$ {total_mat_indirect:.2f}")
 
-            # 2. Processos
             total_proc_recursive = float(base["processos"])
-            with st.expander(f"Processos: R$ {total_proc_recursive:.2f} {fmt_pct(total_proc_recursive)}", expanded=False):
-                df_proc_det = pd.read_sql(f"SELECT vp.nome as Item, pu.horas as Qtd, vp.preco_unitario_hora as 'Unit(R$)', (pu.horas * vp.preco_unitario_hora) as 'Total(R$)' FROM processes_usage pu JOIN vertical_processes vp ON pu.process_id=vp.id WHERE pu.product_id={p_id}", conn)
-                total_proc_direct = df_proc_det["Total(R$)"].sum() if not df_proc_det.empty else 0.0
-                total_proc_indirect = total_proc_recursive - total_proc_direct
+            df_proc_det = pd.read_sql(
+                f"SELECT vp.nome as Item, pu.horas as Qtd, vp.preco_unitario_hora as 'Unit(R$)', "
+                f"(pu.horas * vp.preco_unitario_hora) as 'Total(R$)' "
+                f"FROM processes_usage pu JOIN vertical_processes vp ON pu.process_id=vp.id "
+                f"WHERE pu.product_id={p_id}",
+                conn,
+            )
+            total_proc_direct = df_proc_det["Total(R$)"].sum() if not df_proc_det.empty else 0.0
+            total_proc_indirect = total_proc_recursive - total_proc_direct
 
+            with st.expander(f"Processos: R$ {total_proc_recursive:.2f} {fmt_pct(total_proc_recursive)}", expanded=False):
                 if not df_proc_det.empty:
-                    st.dataframe(df_proc_det.style.format({"Qtd": "{:.2f}", "Unit(R$)": "{:.2f}", "Total(R$)": "{:.2f}"}), use_container_width=True)
-                
+                    st.dataframe(
+                        df_proc_det.style.format(
+                            {"Qtd": "{:.2f}", "Unit(R$)": "{:.2f}", "Total(R$)": "{:.2f}"}
+                        ),
+                        use_container_width=True,
+                    )
                 if total_proc_indirect > 0.01:
                     st.info(f"Processos de Sub-componentes: R$ {total_proc_indirect:.2f}")
 
-            # 3. Terceiros
             total_third_recursive = float(base["terceiros"])
-            with st.expander(f"Terceiros: R$ {total_third_recursive:.2f} {fmt_pct(total_third_recursive)}", expanded=False):
-                df_third_det = pd.read_sql(f"SELECT tp.nome as Item, tu.quantidade as Qtd, tp.preco_unitario as 'Unit(R$)', (tu.quantidade * tp.preco_unitario) as 'Total(R$)' FROM third_usage tu JOIN third_party_items tp ON tu.third_id=tp.id WHERE tu.product_id={p_id}", conn)
-                total_third_direct = df_third_det["Total(R$)"].sum() if not df_third_det.empty else 0.0
-                total_third_indirect = total_third_recursive - total_third_direct
+            df_third_det = pd.read_sql(
+                f"SELECT tp.nome as Item, tu.quantidade as Qtd, tp.preco_unitario as 'Unit(R$)', "
+                f"(tu.quantidade * tp.preco_unitario) as 'Total(R$)' "
+                f"FROM third_usage tu JOIN third_party_items tp ON tu.third_id=tp.id "
+                f"WHERE tu.product_id={p_id}",
+                conn,
+            )
+            total_third_direct = df_third_det["Total(R$)"].sum() if not df_third_det.empty else 0.0
+            total_third_indirect = total_third_recursive - total_third_direct
 
+            with st.expander(f"Terceiros: R$ {total_third_recursive:.2f} {fmt_pct(total_third_recursive)}", expanded=False):
                 if not df_third_det.empty:
-                    st.dataframe(df_third_det.style.format({"Qtd": "{:.2f}", "Unit(R$)": "{:.2f}", "Total(R$)": "{:.2f}"}), use_container_width=True)
-                
+                    st.dataframe(
+                        df_third_det.style.format(
+                            {"Qtd": "{:.2f}", "Unit(R$)": "{:.2f}", "Total(R$)": "{:.2f}"}
+                        ),
+                        use_container_width=True,
+                    )
                 if total_third_indirect > 0.01:
                     st.info(f"Terceiros de Sub-componentes: R$ {total_third_indirect:.2f}")
 
-            # 4. Admin/Outros/Impostos
             v_adm = float(base["administrativos"])
             v_imp = float(res["impostos_valor"])
             with st.expander(f"Outros Custos & Impostos: R$ {v_adm+v_imp:.2f}", expanded=False):
                 st.markdown(f"**Admin/Frete/Outros**: R$ {v_adm:.2f} {fmt_pct(v_adm)}")
                 st.markdown(f"**Impostos**: R$ {v_imp:.2f} ({float(res['taxas']['total'])*100:.1f}%)")
+
+            planilha_rows = []
+            if not df_mat_det.empty:
+                for _, r in df_mat_det.iterrows():
+                    planilha_rows.append(
+                        {
+                            "Categoria": "Materiais",
+                            "Item": r["Item"],
+                            "Qtd": float(r["Qtd"]),
+                            "Unit(R$)": float(r["Unit(R$)"]),
+                            "Total(R$)": float(r["Total(R$)"]),
+                        }
+                    )
+            if total_mat_indirect > 0.01:
+                planilha_rows.append(
+                    {
+                        "Categoria": "Materiais",
+                        "Item": "Materiais de Sub-componentes",
+                        "Qtd": None,
+                        "Unit(R$)": None,
+                        "Total(R$)": float(total_mat_indirect),
+                    }
+                )
+
+            if not df_proc_det.empty:
+                for _, r in df_proc_det.iterrows():
+                    planilha_rows.append(
+                        {
+                            "Categoria": "Processos",
+                            "Item": r["Item"],
+                            "Qtd": float(r["Qtd"]),
+                            "Unit(R$)": float(r["Unit(R$)"]),
+                            "Total(R$)": float(r["Total(R$)"]),
+                        }
+                    )
+            if total_proc_indirect > 0.01:
+                planilha_rows.append(
+                    {
+                        "Categoria": "Processos",
+                        "Item": "Processos de Sub-componentes",
+                        "Qtd": None,
+                        "Unit(R$)": None,
+                        "Total(R$)": float(total_proc_indirect),
+                    }
+                )
+
+            if not df_third_det.empty:
+                for _, r in df_third_det.iterrows():
+                    planilha_rows.append(
+                        {
+                            "Categoria": "Terceiros",
+                            "Item": r["Item"],
+                            "Qtd": float(r["Qtd"]),
+                            "Unit(R$)": float(r["Unit(R$)"]),
+                            "Total(R$)": float(r["Total(R$)"]),
+                        }
+                    )
+            if total_third_indirect > 0.01:
+                planilha_rows.append(
+                    {
+                        "Categoria": "Terceiros",
+                        "Item": "Terceiros de Sub-componentes",
+                        "Qtd": None,
+                        "Unit(R$)": None,
+                        "Total(R$)": float(total_third_indirect),
+                    }
+                )
+
+            planilha_rows.append(
+                {
+                    "Categoria": "Admin/Outros",
+                    "Item": "Admin/Frete/Outros",
+                    "Qtd": None,
+                    "Unit(R$)": None,
+                    "Total(R$)": float(v_adm),
+                }
+            )
+            planilha_rows.append(
+                {
+                    "Categoria": "Impostos",
+                    "Item": "Impostos",
+                    "Qtd": None,
+                    "Unit(R$)": None,
+                    "Total(R$)": float(v_imp),
+                }
+            )
+
+            df_planilha = pd.DataFrame(planilha_rows)
+            if not df_planilha.empty and total_cost > 0:
+                df_planilha["% do Custo"] = df_planilha["Total(R$)"].astype(float) / total_cost * 100.0
+            else:
+                df_planilha["% do Custo"] = 0.0
+
+            resumo_rows = [
+                {
+                    "Categoria": "Resumo",
+                    "Item": "Total Custo (sem impostos)",
+                    "Qtd": None,
+                    "Unit(R$)": None,
+                    "Total(R$)": float(total_cost),
+                    "% do Custo": 100.0,
+                },
+                {
+                    "Categoria": "Resumo",
+                    "Item": "Preço de Venda",
+                    "Qtd": None,
+                    "Unit(R$)": None,
+                    "Total(R$)": float(res["preco_venda"]),
+                    "% do Custo": float(res["preco_venda"]) / total_cost * 100.0 if total_cost > 0 else 0.0,
+                },
+            ]
+            df_planilha = pd.concat([df_planilha, pd.DataFrame(resumo_rows)], ignore_index=True)
             
             if st.button(f"💾 Salvar/Atualizar Vínculo com {c_opt}", key="btn_save_quote", type="primary"):
-                 db.link_product_client(p_id, c_id, margem, float(res['preco_venda']))
-                 st.success(f"Orçamento salvo com sucesso! Produto vinculado a {c_opt}.")
-                 # Force reload to update the list above
-                 st.rerun()
-            
-            # Graphs
-            t1, t2 = st.tabs(["Gráficos", "Histórico de Vínculos"])
+                db.link_product_client(p_id, c_id, margem, float(res["preco_venda"]))
+                db.add_cost_history(
+                    p_id,
+                    c_id,
+                    float(base["materiais"]),
+                    float(base["processos"]),
+                    float(base["terceiros"]),
+                    float(base["administrativos"]),
+                    float(res["impostos_valor"]),
+                    float(res["preco_venda"]),
+                    float(margem),
+                )
+                st.success(f"Orçamento salvo com sucesso! Produto vinculado a {c_opt}.")
+                st.rerun()
+
+            t_plan, t1, t2 = st.tabs(["Planilha Detalhada", "Gráficos", "Histórico de Vínculos"])
             with t1:
                 dados_pareto = pd.DataFrame({
                     "Categoria": ["Insumos", "Processos", "Impostos", "Admin/Outros"],
@@ -461,6 +717,82 @@ with tab3:
                     st.dataframe(links)
                  except Exception:
                     st.write("Nenhum vínculo encontrado.")
+
+            with t_plan:
+                st.dataframe(
+                    df_planilha.style.format(
+                        {
+                            "Qtd": "{:.2f}",
+                            "Unit(R$)": "{:.2f}",
+                            "Total(R$)": "{:.2f}",
+                            "% do Custo": "{:.2f}",
+                        }
+                    ),
+                    use_container_width=True,
+                )
+                buf_xlsx = BytesIO()
+                df_planilha.to_excel(buf_xlsx, index=False, sheet_name="Custos")
+                buf_xlsx.seek(0)
+                st.download_button(
+                    "Exportar planilha detalhada para Excel",
+                    buf_xlsx,
+                    file_name=f"planilha_custos_prod_{p_id}_cli_{c_id}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+
+                hist = pd.read_sql(
+                    """
+                    SELECT data_vinculo,
+                           custo_materiais,
+                           custo_processos,
+                           custo_terceiros,
+                           custos_admin,
+                           impostos,
+                           custo_total_sem_impostos,
+                           preco_final,
+                           margem
+                    FROM product_cost_history
+                    WHERE product_id = ? AND client_id = ?
+                    ORDER BY data_vinculo
+                    """,
+                    conn,
+                    params=(p_id, c_id),
+                )
+                if not hist.empty:
+                    df_long = hist.melt(
+                        id_vars="data_vinculo",
+                        value_vars=[
+                            "custo_materiais",
+                            "custo_processos",
+                            "custo_terceiros",
+                            "custos_admin",
+                            "impostos",
+                            "preco_final",
+                        ],
+                        var_name="Tipo",
+                        value_name="Valor",
+                    )
+                    df_long["Tipo"] = df_long["Tipo"].map(
+                        {
+                            "custo_materiais": "Materiais",
+                            "custo_processos": "Processos",
+                            "custo_terceiros": "Terceiros",
+                            "custos_admin": "Admin/Outros",
+                            "impostos": "Impostos",
+                            "preco_final": "Preço de Venda",
+                        }
+                    )
+                    fig_hist = px.line(
+                        df_long,
+                        x="data_vinculo",
+                        y="Valor",
+                        color="Tipo",
+                        markers=True,
+                        title="Evolução dos custos e preço de venda",
+                    )
+                    st.plotly_chart(fig_hist, use_container_width=True)
+                else:
+                    st.info("Ainda não há histórico de custos salvos para este produto e cliente.")
 
 
 
